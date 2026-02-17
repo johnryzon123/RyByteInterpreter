@@ -1,0 +1,4 @@
+# string.ry - A Ry Standard Library
+# "Ry's for You" - Feel free to modify these functions!
+
+alias use("libry_string.so) as String

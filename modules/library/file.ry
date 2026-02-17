@@ -1,0 +1,20 @@
+# file.ry
+alias use("libry_file.so") as native
+
+namespace File {
+    func read(data path) {
+        data result = native.read(path) 
+        if result == null {
+            panic "File Not Found."
+        }
+        return result
+    }
+
+    func write(data path, data content) {
+        data result = native.read(path) 
+        if result == null {
+            panic "File Not Found."
+        }
+        return native.write(path, content)
+    }
+}

@@ -1,0 +1,20 @@
+class Animal {
+    data name = ""
+    func init(name) {
+        this.name = name
+        out("Animal initialized")
+    }
+}
+
+class Dog childof Animal {
+    data breed = ""
+    func init(name, breed) {
+        parent.init(name)
+        this.breed = breed
+        out("Dog initialized")
+        out(name + " is a " + breed + " dog")
+    }
+}
+
+data myDog = Dog("Buddy", "Golden Retriever")
+out("Dog Name is: " + myDog.name)

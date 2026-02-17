@@ -1,0 +1,16 @@
+# Iterative Fibonacci (returns nth Fibonacci)
+func fib_iter(n) {
+  data a = 0
+  data b = 1
+  data i = 0
+
+  while (i < n) {
+    data temp = a
+    a = b
+    b = temp + b
+    i = i + 1
+  }
+  return a
+}
+
+out(fib_iter(10))

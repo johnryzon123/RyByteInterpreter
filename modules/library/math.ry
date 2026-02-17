@@ -1,0 +1,148 @@
+# math.ry - A Ry Standard Library
+# "Ry's for You" - Feel free to modify these algorithms!
+
+namespace Math {
+  data pi = 3.141592653589793
+  data eps = 2.718281828459045
+
+  # Check if a number is even/odd using your new % operator
+  func is_even(data n) {
+      return n % 2 == 0
+  }
+
+  # Greatest Common Divisor
+  func gcd(data a, data b) {
+      while b != 0 {
+          data temp = b
+          b = a % b
+          a = temp
+      }
+      return a
+  }
+  # Absolute value
+  func abs(data n) {
+      if n < 0 {
+          return -n
+      }
+      return n
+  }
+
+  # Power 
+  func pow(data base, data exp) {
+      data result = 1
+      foreach data i in 1 to exp {
+          result = result * base
+      }
+      return result
+  }
+
+  # Factorial
+  func factorial(data n) {
+      if n <= 1 { return 1 }
+      return n * factorial(n - 1)
+  }
+
+  # Square Root
+  func sqrt(data n) {
+      if n < 0 { return 0 }
+      data x = n
+      data y = 1
+      data e = 0.000001
+      while abs(x - y) > e {
+          x = (x + y) / 2
+          y = n / x
+      }
+      return x
+  }
+  # Sine function using Taylor series
+    func sin(data x) {
+        data pi = 3.141592653589793
+        data pi2 = 6.283185307179586
+        
+        # Bring into circle range
+        data nX = x % pi2
+        
+        # Force into -pi to pi range
+        # If this fails, the Taylor series will be inaccurate!
+        if nX > pi {
+            nX = nX - pi2
+        }
+        if nX < (-1 * pi) {
+            nX = nX + pi2
+        }
+        
+        # 3. Taylor Series
+        data res = nX
+        data t = nX
+        data xsq = nX * nX
+        
+        foreach data i in 1 to 10 {
+            # Breaking the math down for the interpreter
+            data denom = (2 * i) * (2 * i + 1)
+            t = t * (-1 * xsq) / denom
+            res = res + t
+        }
+    return res
+}
+
+  # Cosine function using Taylor series
+  func cos(data x) {
+      data pi2 = 6.28318530
+      data normX = x % pi2
+      
+      data term = 1
+      data result = 1
+      data x2 = normX * normX
+      
+      foreach data i in 1 to 7 {
+          term = term * (-1 * x2) / ((2 * i - 1) * (2 * i))
+          result = result + term
+      }
+      return result
+  }
+  # Simple rounding (Pure Ry)
+  func round(data n) {
+      data fractional = n % 1
+      if fractional >= 0.5 {
+          return (n - fractional) + 1
+      }
+      return n - fractional
+  }
+
+  # Degrees to Radians
+  func rad(data deg) {
+      return deg * (pi / 180)
+  }
+  # Tangent: sin / cos
+  func tan(data x) {
+      data c = cos(x)
+      if abs(c) < 0.000001 {
+          out("Math Error: Tangent undefined (vertical asymptote)")
+          return 0
+      }
+      return sin(x) / c
+  }
+
+  # Cotangent: cos / sin
+  func cot(data x) {
+      data s = sin(x)
+      if abs(s) < 0.000001 {
+          return 0
+      }
+      return cos(x) / s
+  }
+
+  # Secant: 1 / cos
+  func sec(data x) {
+      data c = cos(x)
+      if abs(c) < 0.000001 { return 0 }
+      return 1 / c
+  }
+
+  # Cosecant: 1 / sin
+  func csc(data x) {
+      data s = sin(x)
+      if abs(s) < 0.000001 { return 0 }
+      return 1 / s
+  }
+}

@@ -1,0 +1,6 @@
+# errors.ry - A Ry Standard Library
+# "Ry's for You" - Feel free to modify these algorithms!
+
+alias "MathError" as MathError
+alias "IOError" as IOError
+alias "Panic" as UserPanic

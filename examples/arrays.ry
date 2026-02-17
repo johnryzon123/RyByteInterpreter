@@ -1,0 +1,2 @@
+data matrix = [[1, 2], [3, 4]]
+out(matrix[0][1])

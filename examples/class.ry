@@ -1,0 +1,11 @@
+class Counter {
+  data count = 0
+  func counter() {
+    this.count = this.count + 1
+    return this.count
+  }
+}
+
+data c = Counter()
+out(c.counter()) # Should print 1
+out(c.counter()) # Should print 2

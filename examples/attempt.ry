@@ -1,0 +1,8 @@
+attempt {
+    out("Working...")
+    panic "Something went wrong"
+} fail err {
+    out("Error: ${err}")
+} finally {
+    out("I always run!")
+}

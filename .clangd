@@ -1,0 +1,5 @@
+CompileFlags:
+  Add:
+    - "-I/home/ryzon/Dev/Projects/Ry/backend/include"
+    - "-I/home/ryzon/Dev/Projects/Ry/interp/include"
+    - "-I/home/ryzon/Dev/Projects/Ry/modules/native"

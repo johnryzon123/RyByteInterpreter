@@ -1,0 +1,7 @@
+# Functions example
+func add(a, b) {
+  return a + b
+}
+
+data result = add(6, 7)
+out(result)

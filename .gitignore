@@ -1,0 +1,6 @@
+# --- Ry Language Ignore List ---
+build/
+.vscode/
+.cache/
+.clangd/
+compile_commands.json

@@ -1,0 +1,8 @@
+# types.ry - A Ry Standard Library
+# "Ry's for You" - Feel free to modify these algorithms!
+
+alias data::num as num
+alias data::bool as bool
+alias data::list as list
+alias data::map as map
+alias data::str as str
