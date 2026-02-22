@@ -64,11 +64,15 @@ namespace RyRuntime {
 	struct Chunk {
 		std::vector<uint8_t> code; // The Instructions
 		std::vector<RyValue> constants; // For numbers/strings
-		std::vector<int> lines; // For error reporting
 
-		void write(uint8_t byte, int line) {
+		// For error reporting
+		std::vector<int> lines;
+		std::vector<int> columns; 
+
+		void write(uint8_t byte, int line, int column) {
 			code.push_back(byte);
 			lines.push_back(line);
+			columns.push_back(column);
 		}
 
 		// Returns the index of the constant in the pool

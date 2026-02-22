@@ -1,10 +1,14 @@
 #include "vm.h"
+#include <cstdio>
 #include <stdarg.h>
 #include "chunk.h"
 #include "func.h"
 #include "native.hpp"
+#include "tools.h"
 
 namespace RyRuntime {
+	static std::string vmSource;
+	void setVMSource(const std::string &source) { vmSource = source; }
 
 	void VM::push(RyValue value) {
 		*stackTop = value;
@@ -28,15 +32,20 @@ namespace RyRuntime {
 
 	// Helper for runtime errors to show line numbers
 	void VM::runtimeError(const char *format, ...) {
+		char buffer[1024];
 		va_list args;
 		va_start(args, format);
-		vfprintf(stderr, format, args);
+		vsnprintf(buffer, sizeof(buffer), format, args);
 		va_end(args);
-		fputs("\n", stderr);
-		/*
-				size_t instruction = frames[frameCount - 1].ip - frames[frameCount - 1].function->chunk.code.data() - 1;
-				int line = frames[frameCount - 1].function->chunk.lines[instruction];
-		*/
+
+		if (frameCount > 0) {
+			size_t instruction = frames[frameCount - 1].ip - frames[frameCount - 1].function->chunk.code.data() - 1;
+			int line = frames[frameCount - 1].function->chunk.lines[instruction];
+			RyTools::report(line, 1, "", buffer, vmSource);
+		} else {
+			std::cerr << buffer << "\n";
+		}
+
 		resetStack();
 	}
 
@@ -58,7 +67,7 @@ namespace RyRuntime {
 	}
 
 	InterpretResult VM::run() {
-// THE NEW MACROS: Everything points to the current frame
+// Everything points to the current frame
 #define FRAME (frames[frameCount - 1])
 #define READ_BYTE() (*FRAME.ip++)
 #define READ_CONSTANT() (FRAME.function->chunk.constants[READ_BYTE()])

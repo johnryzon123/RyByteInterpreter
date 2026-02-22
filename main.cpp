@@ -14,7 +14,16 @@
 
 using namespace RyRuntime;
 
+namespace RyRuntime {
+	void setVMSource(const std::string &source);
+}
+
 void interpret(VM &vm, const std::string &source) {
+	// Reset flag to stop infinite loops
+	RyTools::hadError = false;
+
+	RyRuntime::setVMSource(source);
+
 	// Lexing
 	Backend::Lexer lexer(source);
 	std::vector<Backend::Token> tokens = lexer.scanTokens();
@@ -26,12 +35,14 @@ void interpret(VM &vm, const std::string &source) {
 	std::vector<std::shared_ptr<Backend::Stmt>> statements = parser.parse();
 
 	if (RyTools::hadError)
+
 		return;
 
 	//  Compiling
 	Compiler compiler;
 	Chunk chunk;
 	if (!compiler.compile(statements, &chunk)) {
+		std::cout << "Compilation failed.\n";
 		return;
 	}
 
@@ -57,8 +68,7 @@ void runREPL(VM &vm) {
 		if (!std::getline(std::cin, line))
 			break;
 
-		// Reset logic
-		if (line == "exit")
+		if (line == "quit")
 			break;
 		if (line == "clear") {
 			system("clear");
@@ -94,7 +104,7 @@ int main(int argc, char *argv[]) {
 			std::string src((std::istreambuf_iterator<char>(inputFile)), std::istreambuf_iterator<char>());
 			interpret(vm, src);
 		} else if (command == "-v" || command == "--version") {
-			std::cout << "Ry version 0.2.0 (Bytecode RVM)\n";
+			std::cout << "Ry (ByteCode Edition) v0.2.0\n";
 		} else {
 		}
 	} else {

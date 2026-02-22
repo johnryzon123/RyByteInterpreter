@@ -19,6 +19,11 @@ namespace RyRuntime {
 		bool compile(const std::vector<std::shared_ptr<Backend::Stmt>> &statements, Chunk *chunk);
 
 	private:
+		// Current line and collumn for error reporting
+		int currentLine;
+		int currentColumn;
+
+		// --- Visitors ---
 		void visitMath(Backend::MathExpr &expr);
 		void visitGroup(Backend::GroupExpr &expr);
 		void visitVariable(Backend::VariableExpr &expr);

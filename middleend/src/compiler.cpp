@@ -34,9 +34,7 @@ namespace RyRuntime {
 
 	// --- Bytecode Helpers ---
 
-	void Compiler::emitByte(uint8_t byte) {
-		compilingChunk->write(byte, 0); // Line number 0 for now
-	}
+	void Compiler::emitByte(uint8_t byte) { compilingChunk->write(byte, currentLine, currentColumn); }
 
 	void Compiler::emitBytes(uint8_t byte1, uint8_t byte2) {
 		emitByte(byte1);
@@ -115,6 +113,9 @@ namespace RyRuntime {
 	// --- Visitors ---
 
 	void Compiler::visitMath(MathExpr &expr) {
+		currentColumn = expr.op_t.column;
+		currentLine = expr.op_t.line;
+
 		compileExpression(expr.left);
 		compileExpression(expr.right);
 
@@ -160,6 +161,9 @@ namespace RyRuntime {
 	void Compiler::visitGroup(GroupExpr &expr) { compileExpression(expr.expression); }
 
 	void Compiler::visitVariable(VariableExpr &expr) {
+		currentColumn = expr.name.column;
+		currentLine = expr.name.line;
+
 		int arg = resolveLocal(expr.name);
 		if (arg != -1) {
 			emitBytes(OP_GET_LOCAL, (uint8_t) arg);
@@ -169,6 +173,9 @@ namespace RyRuntime {
 	}
 
 	void Compiler::visitValue(ValueExpr &expr) {
+		currentColumn = expr.value.column;
+		currentLine = expr.value.line;
+
 		if (expr.value.type == TokenType::TRUE) {
 			emitByte(OP_TRUE);
 		} else if (expr.value.type == TokenType::FALSE) {
@@ -184,6 +191,9 @@ namespace RyRuntime {
 	}
 
 	void Compiler::visitLogical(LogicalExpr &expr) {
+		currentColumn = expr.op_t.column;
+		currentLine = expr.op_t.line;
+
 		compileExpression(expr.left);
 		if (expr.op_t.type == TokenType::AND) {
 			int endJump = emitJump(OP_JUMP_IF_FALSE);
@@ -200,6 +210,9 @@ namespace RyRuntime {
 		}
 	}
 	void Compiler::visitRange(RangeExpr &expr) {
+		currentColumn = expr.op_t.column;
+		currentLine = expr.op_t.line;
+
 		// Compile the start (e.g., 1)
 		compileExpression(expr.leftBound);
 		// Compile the end (e.g., 10)
