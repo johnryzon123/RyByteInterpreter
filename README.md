@@ -14,7 +14,8 @@ Ry is a lightweight, robust, and english-like language designed with a focus on 
 
 Ry is built to be efficient. With an optimized custom c++ core that uses custom bytecode without external tools like
 flex, bison, antlr or llvm
-Ry also has a builtin keyword for looping through ranges ``foreach``: takes about 1 second in my laptop to run try to see it by running:
+Ry also has a builtin keyword for looping through ranges ``foreach``: takes about 1 second in my laptop.
+Test it yourself:
    ```bash
    $ ry run examples/speed_test.ry
    ```
@@ -25,7 +26,7 @@ Ry comes with a built-in installer for Linux and Windows systems.
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/johnryzon123/RyByteInterpreter.git](https://github.com/johnryzon123/RyByteInterpreter.git)
+   git clone [https://github.com/johnryzon123/Ry2.git](https://github.com/johnryzon123/Ry2.git)
    cd Ry
    ```
 2. **Build and Install:**
@@ -45,7 +46,8 @@ Simply type `ry` to enter the interactive shell.
   $ ry
   Ry (Ry's for you) REPL - Bytecode Edition
   ry> out(0 to 10)
-  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  0..10
+  ry>
   ```
 
 **Running a Script**
@@ -56,8 +58,17 @@ Simply type `ry` to enter the interactive shell.
 # Examples
 ```
 # Range-based iteration
-foreach data i in 0 to 100 {
-    out(i)
+foreach data i in 1 to 3 {
+    foreach data j in 10 to 13 {
+        if j == 12 { stop } # stop is a new keyword in Ry 2.0.6
+        # Ry also has skip which skips the current iteration
+        out(i + " - " + j)
+    }
+    # Prints:
+    # 1 - 10
+    # 1 - 11
+    # 2 - 10
+    # 2 - 11
 }
 
 # Error reporting example
