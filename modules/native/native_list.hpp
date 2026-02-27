@@ -1,40 +1,26 @@
 #include <stdexcept>
-#include "value.h"
 #include "env.h" // IWYU pragma: keep
+#include "value.h"
 
 namespace RyRuntime {
-	inline RyValue ry_len(int argCount, RyValue *args, std::unordered_map<std::string, RyValue>& globals) {
-		RyValue arg = args[0];
-
-		if (arg.isList()) {
-			auto vec = arg.asList();
-			return static_cast<double>(vec->size());
-		}
-
-		if (arg.isString()) {
-			auto str = arg.asString();
-			return static_cast<double>(str.length());
-		}
-
-		if (arg.isMap()) {
-			auto env = arg.asMap();
-			return (double) env->size();
-		}
-
-		throw std::runtime_error("Argument to len() must be a list, string, or map.");
-	}
-	inline RyValue ry_pop(int argCount, RyValue *args, std::unordered_map<std::string, RyValue>& globals) {
-		RyValue &arg = args[0];
-		if (arg.isList()) {
-			auto list = arg.asList();
-			if (list->empty()) {
-				throw std::runtime_error("Cannot pop from an empty list.");
+	inline RyValue ry_pop(int argCount, RyValue *args, std::unordered_map<std::string, RyValue> &globals) {
+		// We look for the list receiver (usually at args[-1] if argCount is 0)
+		RyValue *listPtr = nullptr;
+		for (int i = 0; i >= -5; i--) {
+			if (args[i].isList()) {
+				listPtr = &args[i];
+				break;
 			}
-			RyValue lastElement = list->back();
-			list->pop_back();
-			return lastElement;
 		}
 
-		throw std::runtime_error("Argument to pop() must be a list.");
+		if (listPtr) {
+			auto list = listPtr->asList();
+			if (list->empty())
+				throw std::runtime_error("Empty list pop.");
+			RyValue val = list->back();
+			list->pop_back();
+			return val;
+		}
+		throw std::runtime_error("pop() called on non-list.");
 	}
-} // namespace Frontend
+} // namespace RyRuntime

@@ -13,7 +13,7 @@ namespace Frontend {
 
 	/*
 	 * Contains the data for functions
-	*/
+	 */
 	class RyFunction {
 	public:
 		int arity; // Holds how many parameters a function needs
@@ -28,7 +28,7 @@ namespace Frontend {
 
 	/*
 	 * Contains the data for native functions
-	*/
+	 */
 	class RyNative {
 	public:
 		NativeFn function; // Contains the raw function
@@ -39,5 +39,6 @@ namespace Frontend {
 
 		// Constructor for building native functions
 		RyNative(NativeFn fn, std::string n, int a) : function(fn), name(n), arity(a) {}
+		RyNative(NativeFn f, int a) : function(f), arity(a) {}
 	}; // class RyNative
 } // namespace Frontend

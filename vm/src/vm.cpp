@@ -1,4 +1,5 @@
 #include "vm.h"
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <set>
@@ -15,6 +16,31 @@
 namespace RyRuntime {
 	static std::string vmSource;
 	void setVMSource(const std::string &source) { vmSource = source; }
+	int calculateDistance(const std::string &s1, const std::string &s2) {
+		int n = s1.length();
+		int m = s2.length();
+
+		// If lengths are too different, don't even bother
+		if (std::abs(n - m) > 2)
+			return 99;
+
+		// We use two vectors (rows) instead of a whole matrix
+		std::vector<int> prev(m + 1);
+		std::vector<int> curr(m + 1);
+
+		for (int j = 0; j <= m; j++)
+			prev[j] = j;
+
+		for (int i = 1; i <= n; i++) {
+			curr[0] = i;
+			for (int j = 1; j <= m; j++) {
+				int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
+				curr[j] = std::min({curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost});
+			}
+			prev = curr;
+		}
+		return prev[m];
+	}
 
 	void VM::push(RyValue value) {
 		*stackTop = value;
@@ -136,19 +162,73 @@ namespace RyRuntime {
 				case OP_ADD: {
 					RyValue b = pop();
 					RyValue a = pop();
-					push(a + b);
+
+					if (a.isList()) {
+						auto newList = std::make_shared<std::vector<RyValue>>(*a.asList());
+
+						if (b.isList()) {
+							auto bList = b.asList();
+							newList->insert(newList->end(), bList->begin(), bList->end());
+						} else {
+							newList->push_back(b);
+						}
+						push(RyValue(newList));
+					} else if (a.isNumber() && b.isNumber()) {
+						push(RyValue(a.asNumber() + b.asNumber()));
+					} else if (a.isString() || b.isString()) {
+						push(RyValue(a.to_string() + b.to_string()));
+					} else {
+						runtimeError("Operands must be numbers, strings, or lists.");
+						return INTERPRET_RUNTIME_ERROR;
+					}
 					break;
 				}
 				case OP_SUBTRACT: {
 					RyValue b = pop();
 					RyValue a = pop();
-					push(a - b);
+
+					if (a.isNumber() && b.isNumber()) {
+						push(RyValue(a.asNumber() - b.asNumber()));
+					} else {
+						runtimeError("Operands must be numbers");
+						return INTERPRET_RUNTIME_ERROR;
+					}
 					break;
 				}
 				case OP_MULTIPLY: {
 					RyValue b = pop();
 					RyValue a = pop();
-					push(a * b);
+
+					if (a.isList()) {
+						auto newList = std::make_shared<std::vector<RyValue>>(*a.asList());
+
+						if (b.isList()) {
+							auto bList = b.asList();
+							newList->insert(newList->end(), bList->begin(), bList->end());
+						} else {
+							newList->push_back(b);
+						}
+						push(RyValue(newList));
+					} else if (a.isNumber() && b.isNumber()) {
+						push(RyValue(a.asNumber() * b.asNumber()));
+					} else if (a.isNumber() && b.isString()) {
+						std::string result;
+						result.reserve(a.asNumber() * b.to_string().length());
+						for (size_t i = 0; i < a.asNumber(); ++i) {
+							result += b.to_string();
+						}
+						push(RyValue(result));
+					} else if (a.isString() && b.isNumber()) {
+						std::string result;
+						result.reserve(b.asNumber() * a.to_string().length());
+						for (size_t i = 0; i < b.asNumber(); ++i) {
+							result += a.to_string();
+						}
+						push(RyValue(result));
+					} else {
+						runtimeError("Operands must be numbers, strings, or lists.");
+						return INTERPRET_RUNTIME_ERROR;
+					}
 					break;
 				}
 				case OP_DIVIDE: {
@@ -230,22 +310,59 @@ namespace RyRuntime {
 					break;
 				}
 				case OP_GET_GLOBAL: {
-					RyValue name = READ_CONSTANT();
-					auto it = globals.find(name.to_string());
+					RyValue nameValue = READ_CONSTANT();
+					std::string name = nameValue.to_string();
+					auto it = globals.find(name);
+
 					if (it == globals.end()) {
-						runtimeError("Undefined variable '%s'.", name.to_string().c_str());
+						std::string bestMatch = "";
+						int minDistance = 3;
+
+						for (auto const &[key, val]: globals) {
+							int dist = calculateDistance(name, key);
+							if (dist < minDistance) {
+								minDistance = dist;
+								bestMatch = key;
+							}
+						}
+
+						if (!bestMatch.empty()) {
+							runtimeError("Undefined variable '%s'. Did you mean '%s'?", name.c_str(), bestMatch.c_str());
+						} else {
+							runtimeError("Undefined variable '%s'.", name.c_str());
+						}
+
 						return INTERPRET_RUNTIME_ERROR;
 					}
 					push(it->second);
 					break;
 				}
 				case OP_SET_GLOBAL: {
-					RyValue name = READ_CONSTANT();
-					auto it = globals.find(name.to_string());
+					RyValue nameValue = READ_CONSTANT();
+					std::string name = nameValue.to_string();
+					auto it = globals.find(name);
+
 					if (it == globals.end()) {
-						runtimeError("Undefined variable '%s'.", name.to_string().c_str());
+						std::string bestMatch = "";
+						int minDistance = 3;
+
+						for (auto const &[key, val]: globals) {
+							int dist = calculateDistance(name, key);
+							if (dist < minDistance) {
+								minDistance = dist;
+								bestMatch = key;
+							}
+						}
+
+						if (!bestMatch.empty()) {
+							runtimeError("Cannot set undefined variable '%s'. Did you mean '%s'?", name.c_str(), bestMatch.c_str());
+						} else {
+							runtimeError("Undefined variable '%s'.", name.c_str());
+						}
+
 						return INTERPRET_RUNTIME_ERROR;
 					}
+
 					it->second = *(stackTop - 1);
 					break;
 				}
@@ -275,15 +392,27 @@ namespace RyRuntime {
 					RyValue callee = *(stackTop - 1 - argCount);
 
 					if (callee.isNative()) {
-						// Get the shared pointer to the RyNative object
-						auto nativeObj = callee.asNative();
+						try {
+							auto nativeObj = callee.asNative();
+							RyValue result = nativeObj->function(argCount, stackTop - argCount, globals);
 
-						// Call the 'function' member stored inside that object
-						RyValue result = nativeObj->function(argCount, stackTop - argCount, globals);
+							// Identify the callee's index
+							int calleeIndex = 1 + argCount;
 
-						// Clean up: remove args and the function object itself
-						stackTop -= argCount + 1;
-						push(result);
+							// Check if there's a receiver (the list sitting at calleeIndex + 1)
+							bool hasReceiver = (stackTop - calleeIndex - 1 >= stack) && (stackTop - calleeIndex - 1)->isList();
+
+							stackTop -= calleeIndex; // Pop args and function
+
+							if (hasReceiver) {
+								pop(); // Pop the list receiver
+							}
+
+							push(result);
+						} catch (const std::runtime_error &e) {
+							runtimeError("%s", e.what());
+							return INTERPRET_RUNTIME_ERROR;
+						}
 					} else if (callee.isFunction()) {
 						// Check arity here!
 						if (argCount != callee.asFunction()->arity) {
@@ -449,24 +578,47 @@ namespace RyRuntime {
 					break;
 				}
 				case OP_GET_PROPERTY: {
-					RyValue name = READ_CONSTANT();
-					RyValue object = pop();
+					RyValue nameValue = READ_CONSTANT();
+					std::string propertyName = nameValue.to_string();
 
+					// 1. Peek instead of Pop! Keep the list on the stack for now.
+					RyValue object = peek(0);
+
+					// Handle properties that REPLACE the object (like .len)
+					if (propertyName == "len") {
+						pop(); // Now we can safely remove the list
+						if (object.isList())
+							push(RyValue((double) object.asList()->size()));
+						else if (object.isString())
+							push(RyValue((double) object.to_string().length()));
+						else if (object.isMap())
+							push(RyValue((double) object.asMap()->size()));
+						break;
+					}
+
+					// Handle methods (the object stays on the stack as the 'receiver')
+					if (propertyName == "pop") {
+						// We leave the list at peek(0) and push the function on top
+						auto nativeObj = std::make_shared<Frontend::RyNative>(ry_pop, 0);
+						push(RyValue(nativeObj));
+						break;
+					}
+
+					// If it's not a special property, check if it's a map key
 					if (object.isMap()) {
 						auto ryMap = object.asMap();
-						auto it = ryMap->find(name);
-
+						auto it = ryMap->find(nameValue);
 						if (it != ryMap->end()) {
-							push(it->second);
-						} else {
-							runtimeError("Property '%s' not found.", name.to_string().c_str());
-							return INTERPRET_RUNTIME_ERROR;
+							pop(); // Remove the map
+							push(it->second); // Push the value found
+							break;
 						}
-					} else {
-						runtimeError("Only maps and classes have properties.");
-						return INTERPRET_RUNTIME_ERROR;
 					}
-					break;
+
+					// If we found nothing, pop the object before throwing the error
+					pop();
+					runtimeError("Property '%s' not found on type.", propertyName.c_str());
+					return INTERPRET_RUNTIME_ERROR;
 				}
 				case OP_SET_INDEX: {
 					RyValue value = pop();

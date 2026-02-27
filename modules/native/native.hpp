@@ -18,8 +18,6 @@ namespace RyRuntime {
 		define("clock", ry_clock, 0);
 		define("clear", ry_clear, 0);
 		define("exit", ry_exit, 1);
-		define("len", ry_len, 1);
-		define("pop", ry_pop, 1);
 		define("type", ry_type, 1);
 		define("use", ry_use, 1);
 	}
