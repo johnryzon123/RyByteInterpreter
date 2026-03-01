@@ -200,38 +200,70 @@ void Lexer::identifier() {
 }
 
 void Lexer::str() {
+	std::string value;
+
 	while (peek() != '"' && !isAtEnd()) {
-		if (peek() == '$' && peekNext() == '{') {
-			// Emit the string before the ${
-			std::string segment = source.substr(start + 1, current - (start + 1));
-			tokens.emplace_back(TokenType::STRING, segment, segment, line, column);
-			tokens.emplace_back(TokenType::PLUS, "+", RyValue(), line, column);
-
-			next();
-			next();
-
-			// Collect the variable name
-			int varStart = current;
-			while (peek() != '}' && !isAtEnd()) {
-				next();
+		if (peek() == '\\') {
+			next(); // consume '\'
+			if (isAtEnd()) {
+				RyTools::report(line, column, "", "Unterminated string.", source);
+				return;
+			}
+			char escapedChar = next();
+			switch (escapedChar) {
+				case 'n':
+					value += '\n';
+					break;
+				case 't':
+					value += '\t';
+					break;
+				case 'r':
+					value += '\r';
+					break;
+				case '"':
+					value += '"';
+					break;
+				case '\\':
+					value += '\\';
+					break;
+				case '$':
+					value += '$';
+					break;
+				default:
+					// For an unrecognized escape sequence like \q, just append the 'q' literally.
+					value += escapedChar;
+					break;
+			}
+		} else if (peek() == '$' && peekNext() == '{') {
+			// Interpolation found. Add the segment we have so far.
+			if (!value.empty()) {
+				tokens.emplace_back(TokenType::STRING, value, value, line, static_cast<int>(tokenStartColumn));
+				tokens.emplace_back(TokenType::PLUS, "+", RyValue(), line, column);
 			}
 
+			// Handle the interpolated variable
+			next();
+			next(); // consume ${
+			int varStart = current;
+			while (peek() != '}' && !isAtEnd())
+				next();
 			if (isAtEnd()) {
 				RyTools::report(line, column, "", "Unterminated interpolation.", source);
 				return;
 			}
-
 			std::string varName = source.substr(varStart, current - varStart);
 			tokens.emplace_back(TokenType::IDENTIFIER, varName, RyValue(), line, column);
-
-			next(); // skip '}'
+			next(); // consume }
 
 			tokens.emplace_back(TokenType::PLUS, "+", RyValue(), line, column);
 
-			// Reset start to current-1 so the next part of the string knows where it began
-			start = current - 1;
+			// Reset for the next segment
+			value.clear();
+			tokenStartColumn = column;
 		} else {
-			next();
+			if (peek() == '\n')
+				line++;
+			value += next();
 		}
 	}
 
@@ -240,8 +272,7 @@ void Lexer::str() {
 		return;
 	}
 
-	next(); // skip closing "
+	next(); // consume closing "
 
-	std::string finalSegment = source.substr(start + 1, current - start - 2);
-	tokens.emplace_back(TokenType::STRING, finalSegment, finalSegment, line, column);
+	tokens.emplace_back(TokenType::STRING, value, value, line, static_cast<int>(tokenStartColumn));
 }

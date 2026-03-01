@@ -10,7 +10,7 @@ namespace RyRuntime {
     
     typedef void (*InitFnType)(RegisterFn, void*);
 
-    inline RyValue ry_use(int argCount, RyValue *args, std::unordered_map<std::string, RyValue> &globals) {
+    inline RyValue ry_use(int argCount, RyValue *args, std::map<std::string, RyValue> &globals) {
         if (argCount < 1 || !args[0].isString()) return RyValue();
 
         std::string libName = args[0].to_string();

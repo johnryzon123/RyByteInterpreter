@@ -1,4 +1,5 @@
 #include "value.h"
+#include "class.h"
 
 RyValue RyValue::operator!() const {
 	if (isBool()) {
@@ -82,12 +83,20 @@ std::string RyValue::to_string() const {
 	if (isFunction())
 		return "<function>";
 	if (isInstance())
-		return "<instance>";
+		return asInstance()->klass->name + " instance";
 	if (isRange()) {
 		RyRange r = asRange();
 		return std::to_string((int) r.start) + ".." + std::to_string((int) r.end);
 	}
-	return "<object>";
+	if (isNative())
+		return "<native>";
+	if (isClosure())
+		return "<closure>";
+	if (isClass())
+		return asClass()->name;
+	if (isBoundMethod())
+		return "<bound method>";
+	return "<unknown>";
 }
 
 RyValue RyValue::operator+(const RyValue &other) const {

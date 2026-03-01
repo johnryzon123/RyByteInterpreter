@@ -22,6 +22,10 @@ namespace RyRuntime {
 		OP_SET_LOCAL,
 		OP_GET_PROPERTY,
 		OP_SET_PROPERTY,
+		OP_CLOSURE,
+		OP_GET_UPVALUE,
+		OP_SET_UPVALUE,
+
 
 		// Math
 		OP_ADD, // +
@@ -61,6 +65,7 @@ namespace RyRuntime {
 		// Ry Specifics
 		OP_CALL, // test()
 		OP_CLASS, // class
+		OP_METHOD,
 		OP_INHERIT, // childof
 		OP_PANIC, // panic
 		OP_RETURN, // return

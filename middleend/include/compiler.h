@@ -4,20 +4,26 @@
 #include <unordered_set>
 #include "chunk.h"
 #include "expr.h"
+#include "native.hpp"
 #include "stmt.h"
 #include "token.h"
 #include "tools.h"
-#include "native.hpp"
 
+namespace Frontend {
+	class ClassCompiler;
+}
 
 namespace RyRuntime {
-
 	struct Local {
 		Backend::Token name;
 		int depth;
 		bool isCaptured = false;
 
 		Local(Backend::Token n, int d, bool c = false) : name(n), depth(d), isCaptured(c) {}
+	};
+	struct Upvalue {
+		uint8_t index;
+		bool isLocal;
 	};
 	enum LoopType { LOOP_WHILE, LOOP_FOR, LOOP_EACH };
 	struct LoopContext {
@@ -29,7 +35,8 @@ namespace RyRuntime {
 
 	class Compiler : public Backend::ExprVisitor, public Backend::StmtVisitor {
 	public:
-		Compiler(const std::string &source) : sourceCode(source) {
+		Compiler *enclosing = nullptr;
+		Compiler(Compiler *enclosing, const std::string &source) : enclosing(enclosing), sourceCode(source) {
 			RyTools::hadError = false;
 			for (const auto &name: getNativeNames()) {
 				nativeNames.insert(name);
@@ -98,8 +105,11 @@ namespace RyRuntime {
 		void emitLoop(int loopStart);
 
 		Chunk *compilingChunk;
+		std::shared_ptr<Frontend::ClassCompiler> currentClass = nullptr;
 		void compileStatement(std::shared_ptr<Backend::Stmt> stmt);
 		void compileExpression(std::shared_ptr<Backend::Expr> expr);
+		void compileMethod(std::shared_ptr<Backend::FunctionStmt> stmt);
+
 
 		// Scope & Locals
 		std::vector<Local> locals;
@@ -108,8 +118,12 @@ namespace RyRuntime {
 		void beginScope();
 		void endScope();
 		int resolveLocal(Backend::Token &name);
+		int resolveUpvalue(Backend::Token &name);
 		void addLocal(Backend::Token name);
+		int addUpvalue(uint8_t index, bool isLocal);
 		std::unordered_set<std::string> nativeNames;
+		std::vector<Upvalue> upvalues;
+
 
 		// Stack helpers
 		std::vector<LoopContext> loopStack;

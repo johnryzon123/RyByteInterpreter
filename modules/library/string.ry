@@ -1,4 +1,100 @@
 # string.ry - A Ry Standard Library
-# "Ry's for You" - Feel free to modify these functions!
+# "Ry's for You 2" - Feel free to modify these algorithms!
 
-alias use("libry_string.so) as String
+namespace String {
+    
+    # Returns a portion of the string starting at 'start' with 'length'
+    func substr(data s, data start, data len) {
+        if type(s) != "string" { panic "substr: Expected string" }
+        
+        data res = ""
+        data i = start
+        data end = start + len
+        
+        # Guard against going out of bounds
+        if end > s.len { end = s.len }
+        
+        while i < end {
+            res = res + s[i]
+            i = i + 1
+        }
+        return res
+    }
+
+    # Converts a string to UPPERCASE
+    func upper(data s) {
+        data res = ""
+        data i = 0
+        while i < s.len {
+            data c = s[i]
+            # Manual mapping for ASCII transparency
+            if c == "a" { res = res + "A" }
+            else if c == "b" { res = res + "B" }
+            else if c == "c" { res = res + "C" }
+            else if c == "d" { res = res + "D" }
+            else if c == "e" { res = res + "E" }
+            else if c == "f" { res = res + "F" }
+            else if c == "g" { res = res + "G" }
+            else if c == "h" { res = res + "H" }
+            else if c == "i" { res = res + "I" }
+            else if c == "j" { res = res + "J" }
+            else if c == "k" { res = res + "K" }
+            else if c == "l" { res = res + "L" }
+            else if c == "m" { res = res + "M" }
+            else if c == "n" { res = res + "N" }
+            else if c == "o" { res = res + "O" }
+            else if c == "p" { res = res + "P" }
+            else if c == "q" { res = res + "Q" }
+            else if c == "r" { res = res + "R" }
+            else if c == "s" { res = res + "S" }
+            else if c == "t" { res = res + "T" }
+            else if c == "u" { res = res + "U" }
+            else if c == "v" { res = res + "V" }
+            else if c == "w" { res = res + "W" }
+            else if c == "x" { res = res + "X" }
+            else if c == "y" { res = res + "Y" }
+            else if c == "z" { res = res + "Z" }
+            else { res = res + c } # Keep symbols/numbers as is
+            i = i + 1
+        }
+        return res
+    }
+
+    # Converts a string to lowercase
+    func lower(data s) {
+        data res = ""
+        data i = 0
+        while i < s.len {
+            data c = s[i]
+            if c == "A" { res = res + "a" }
+            else if c == "B" { res = res + "b" }
+            else if c == "C" { res = res + "c" }
+            else if c == "D" { res = res + "d" }
+            else if c == "E" { res = res + "e" }
+            else if c == "F" { res = res + "f" }
+            else if c == "G" { res = res + "g" }
+            else if c == "H" { res = res + "h" }
+            else if c == "I" { res = res + "i" }
+            else if c == "J" { res = res + "j" }
+            else if c == "K" { res = res + "k" }
+            else if c == "L" { res = res + "l" }
+            else if c == "M" { res = res + "m" }
+            else if c == "N" { res = res + "n" }
+            else if c == "O" { res = res + "o" }
+            else if c == "P" { res = res + "p" }
+            else if c == "Q" { res = res + "q" }
+            else if c == "R" { res = res + "r" }
+            else if c == "S" { res = res + "s" }
+            else if c == "T" { res = res + "t" }
+            else if c == "U" { res = res + "u" }
+            else if c == "V" { res = res + "v" }
+            else if c == "W" { res = res + "w" }
+            else if c == "X" { res = res + "x" }
+            else if c == "Y" { res = res + "y" }
+            else if c == "Z" { res = res + "z" }
+            else { res = res + c }
+            i = i + 1
+        }
+        return res
+    }
+}

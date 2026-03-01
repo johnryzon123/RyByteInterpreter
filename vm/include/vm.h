@@ -5,14 +5,31 @@
 */
 
 #pragma once // Include guard
+#include <memory>
 #include "chunk.h" // For the byte chunk
+#include "func.h"
 #include "map" // For map
 #include "unordered_map" // For unordered map
 
 namespace RyRuntime {
+	struct RyUpValue {
+		RyValue *location; // Points to the stack slot
+		RyValue closed; // Stores the value when the stack frame dies
+		std::shared_ptr<RyUpValue> next; // Useful for the VM to track open upvalues
+	};
+	struct RyClosure {
+		std::shared_ptr<Frontend::RyFunction> function;
+		// The "Backpack" - pointers to the captured variables
+		std::vector<std::shared_ptr<RyUpValue>> upvalues;
+
+		RyClosure(std::shared_ptr<Frontend::RyFunction> func) : function(func) {
+			// Initialize the backpack based on what the compiler told us
+			upvalues.resize(func->upvalueCount, nullptr);
+		}
+	};
 	// Used for functions
 	struct CallFrame {
-		std::shared_ptr<Frontend::RyFunction> function; // The function being run
+		std::shared_ptr<RyClosure> closure; // The function being run
 		uint8_t *ip; // The IP inside THIS function
 		RyValue *slots; // Where this function's stack begins
 	};
@@ -21,6 +38,7 @@ namespace RyRuntime {
 	struct ControlBlock {
 		int stackDepth; // Where to reset the stack
 		int handlerIP; // Where the 'catch' code starts
+		int frameDepth; // The frame depth when the block was created
 	};
 
 	// Possible exit states for the VM
@@ -41,8 +59,10 @@ namespace RyRuntime {
 
 	private:
 		InterpretResult run(); // Runs ry
-		std::unordered_map<std::string, RyValue> globals; // Data outside classes/functions
+		std::map<std::string, RyValue> globals; // Data outside classes/functions
 		std::vector<ControlBlock> panicStack; // Stacks caused by a panic
+		std::shared_ptr<RyUpValue> openUpvalues;
+		std::unordered_map<std::string, std::shared_ptr<RyClosure>> moduleCache;
 
 		uint8_t *ip; // Points to the NEXT byte to be executed
 		CallFrame frames[64]; // The "Call Stack"
@@ -67,5 +87,7 @@ namespace RyRuntime {
 		// Runtime helpers
 		void runtimeError(const char *format, ...); // Calls report() for advance error reporting
 		bool isTruthy(RyValue value);
+		std::shared_ptr<RyUpValue> captureUpvalue(RyValue *local);
+		void closeUpvalues(RyValue *last);
 	};
 } // namespace RyRuntime

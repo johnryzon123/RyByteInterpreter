@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include "chunk.h"
+#include "class.h"
 #include "func.h"
 #include "stmt.h"
 #include "token.h"
@@ -34,6 +35,43 @@ namespace RyRuntime {
 	void Compiler::compileExpression(std::shared_ptr<Backend::Expr> expr) {
 		if (expr)
 			expr->accept(*this);
+	}
+	void Compiler::compileMethod(std::shared_ptr<Backend::FunctionStmt> stmt) {
+		track(stmt->name);
+
+		Compiler subCompiler(this, this->sourceCode);
+		subCompiler.currentClass = this->currentClass;
+		auto function = std::make_shared<Frontend::RyFunction>();
+		function->name = stmt->name.lexeme;
+		function->arity = stmt->parameters.size();
+
+		subCompiler.compilingChunk = &function->chunk;
+		subCompiler.beginScope();
+
+		// Slot 0 is "this" for methods!
+		Token thisToken;
+		thisToken.lexeme = "this";
+		subCompiler.addLocal(thisToken);
+
+		for (const auto &param: stmt->parameters) {
+			subCompiler.addLocal(param.name);
+		}
+
+		for (const auto &bodyStmt: stmt->body) {
+			subCompiler.compileStatement(bodyStmt);
+		}
+
+		subCompiler.emitByte(OP_NULL);
+		subCompiler.emitByte(OP_RETURN);
+		subCompiler.endScope();
+
+		emitBytes(OP_CLOSURE, (uint8_t) makeConstant(RyValue(function)));
+
+		// Emit upvalue data
+		for (int i = 0; i < subCompiler.upvalues.size(); i++) {
+			emitByte(subCompiler.upvalues[i].isLocal ? 1 : 0);
+			emitByte(subCompiler.upvalues[i].index);
+		}
 	}
 
 	// --- Bytecode Helpers ---
@@ -113,6 +151,43 @@ namespace RyRuntime {
 		}
 		return -1;
 	}
+	int Compiler::resolveUpvalue(Token &name) {
+		if (enclosing == nullptr)
+			return -1; // We hit the top (global scope)
+
+		int local = enclosing->resolveLocal(name);
+		if (local != -1) {
+			return addUpvalue((uint8_t) local, true);
+		}
+
+		int upvalue = enclosing->resolveUpvalue(name);
+		if (upvalue != -1) {
+			return addUpvalue((uint8_t) upvalue, false);
+		}
+
+		return -1;
+	}
+
+	int Compiler::addUpvalue(uint8_t index, bool isLocal) {
+		for (int i = 0; i < upvalues.size(); i++) {
+			Upvalue &upvalue = upvalues[i];
+			if (upvalue.index == index && upvalue.isLocal == isLocal) {
+				return i;
+			}
+		}
+
+		if (upvalues.size() == 256) {
+			RyTools::report(currentLine, currentColumn, "", "Too many closure variables in function.", sourceCode);
+			RyTools::hadError = true;
+			return 0;
+		}
+
+		Upvalue upvalue;
+		upvalue.isLocal = isLocal;
+		upvalue.index = index;
+		upvalues.push_back(upvalue);
+		return (int) upvalues.size() - 1;
+	}
 
 	// --- Error reporting ---
 	void Compiler::error(const Backend::Token &token, const std::string &message) {
@@ -185,6 +260,12 @@ namespace RyRuntime {
 			return;
 		}
 
+		arg = resolveUpvalue(expr.name);
+		if (arg != -1) {
+			emitBytes(OP_GET_UPVALUE, (uint8_t) arg);
+			return;
+		}
+
 		if (name.find("::") != std::string::npos) {
 			emitBytes(OP_GET_GLOBAL, (uint8_t) makeConstant(RyValue(name)));
 			return;
@@ -192,8 +273,7 @@ namespace RyRuntime {
 
 		bool isNative = nativeNames.count(name) > 0;
 
-		if (!currentNamespace.empty() && !isNative && !name.starts_with("native") &&
-				name.find("::") == std::string::npos) {
+		if (!currentNamespace.empty() && !isNative && !name.starts_with("native") && name.find("::") == std::string::npos) {
 			name = currentNamespace + "::" + name;
 		}
 
@@ -260,6 +340,16 @@ namespace RyRuntime {
 		int arg = resolveLocal(expr.name);
 		if (arg != -1) {
 			emitBytes(OP_SET_LOCAL, (uint8_t) arg);
+			return;
+		}
+		arg = resolveUpvalue(expr.name);
+		if (arg != -1) {
+			emitBytes(OP_SET_UPVALUE, (uint8_t) arg);
+			return;
+		}
+
+		if (expr.name.lexeme.find("::") != std::string::npos) {
+			emitBytes(OP_SET_GLOBAL, (uint8_t) makeConstant(RyValue(expr.name.lexeme)));
 		} else {
 			std::string name = expr.name.lexeme;
 
@@ -434,12 +524,40 @@ namespace RyRuntime {
 
 	void Compiler::visitClassStmt(ClassStmt &stmt) {
 		track(stmt.name);
-		emitBytes(OP_CLASS, (uint8_t) makeConstant(RyValue(stmt.name.lexeme)));
-		emitBytes(OP_DEFINE_GLOBAL, (uint8_t) makeConstant(RyValue(stmt.name.lexeme)));
+
+		auto classCompiler = std::make_shared<Frontend::ClassCompiler>();
+		classCompiler->enclosing = currentClass;
+		currentClass = classCompiler;
+
+		uint8_t nameConst = (uint8_t) makeConstant(RyValue(stmt.name.lexeme));
+		emitBytes(OP_CLASS, nameConst);
+		emitBytes(OP_DEFINE_GLOBAL, nameConst);
+
+		emitBytes(OP_GET_GLOBAL, nameConst);
+
+		if (stmt.superclass != nullptr) {
+			compileExpression(stmt.superclass);
+
+			emitByte(OP_INHERIT);
+		}
+
+
+		for (const auto &method: stmt.methods) {
+			compileMethod(method);
+
+			uint8_t methodConst = (uint8_t) makeConstant(RyValue(method->name.lexeme));
+			emitBytes(OP_METHOD, methodConst);
+		}
+
+		currentClass = currentClass->enclosing;
+		emitByte(OP_POP);
 	}
 
-	// --- Placeholders for Linker Satisfaction ---
 	void Compiler::visitThis(ThisExpr &expr) {
+		if (currentClass == nullptr) {
+			error(expr.keyword, "Cannot use 'this' outside of a class.");
+			return;
+		}
 		track(expr.keyword);
 		emitBytes(OP_GET_LOCAL, 0);
 	}
@@ -456,42 +574,39 @@ namespace RyRuntime {
 	}
 	void Compiler::visitFunctionStmt(FunctionStmt &stmt) {
 		track(stmt.name);
-		std::vector<Local> savedLocals = this->locals;
-		int savedScopeDepth = this->scopeDepth;
 
-		this->locals.clear();
-		this->scopeDepth = 0;
+		Compiler subCompiler(this, this->sourceCode);
 
 		auto function = std::make_shared<Frontend::RyFunction>();
 		function->name = stmt.name.lexeme;
 		function->arity = stmt.parameters.size();
 
-		Chunk *mainChunk = compilingChunk;
-		compilingChunk = &function->chunk;
+		subCompiler.compilingChunk = &function->chunk;
 
-		beginScope();
-		locals.push_back({Token(), 0, false});
+		subCompiler.beginScope();
+		subCompiler.addLocal(Token());
 
 		for (const auto &param: stmt.parameters) {
-			addLocal(param.name);
+			subCompiler.addLocal(param.name);
 		}
 
 		for (const auto &bodyStmt: stmt.body) {
-			compileStatement(bodyStmt);
+			subCompiler.compileStatement(bodyStmt);
 		}
 
-		emitByte(OP_NULL);
-		emitByte(OP_RETURN);
-		endScope();
+		subCompiler.emitByte(OP_NULL);
+		subCompiler.emitByte(OP_RETURN);
+		subCompiler.endScope();
 
-		compilingChunk = mainChunk;
+		emitBytes(OP_CLOSURE, (uint8_t) makeConstant(RyValue(function)));
+		function->upvalueCount = subCompiler.upvalues.size();
 
-		this->locals = savedLocals;
-		this->scopeDepth = savedScopeDepth;
+		for (int i = 0; i < subCompiler.upvalues.size(); i++) {
+			emitByte(subCompiler.upvalues[i].isLocal ? 1 : 0);
+			emitByte(subCompiler.upvalues[i].index);
+		}
 
-		emitConstant(RyValue(function));
-		std::string mangled = stmt.name.lexeme;
-		emitBytes(OP_DEFINE_GLOBAL, (uint8_t) makeConstant(RyValue(mangled)));
+		emitBytes(OP_DEFINE_GLOBAL, (uint8_t) makeConstant(RyValue(stmt.name.lexeme)));
 	}
 	void Compiler::visitMap(MapExpr &expr) {
 		track(expr.braceToken);
@@ -638,6 +753,7 @@ namespace RyRuntime {
 	void Compiler::visitImportStmt(ImportStmt &stmt) {
 		stmt.module->accept(*this);
 		emitByte(OP_IMPORT);
+		emitByte(OP_POP);
 	}
 	void Compiler::visitAliasStmt(AliasStmt &stmt) {
 		track(stmt.name);
@@ -701,9 +817,11 @@ namespace RyRuntime {
 		int jumpToFail = emitJump(OP_ATTEMPT);
 
 		// Compile the 'attempt' body
+		beginScope();
 		for (const auto &s: stmt.attemptBody) {
 			compileStatement(s);
 		}
+		endScope();
 
 		// If we get here, no panic happened. Remove the safety net.
 		emitByte(OP_END_ATTEMPT);

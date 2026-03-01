@@ -81,8 +81,8 @@ namespace Math {
             t = t * (-1 * xsq) / denom
             res = res + t
         }
-    return res
-}
+        return res
+    }
 
   # Cosine function using Taylor series
   func cos(data x) {

@@ -10,6 +10,7 @@
 #include "chunk.h"
 
 namespace Frontend {
+	
 
 	/*
 	 * Contains the data for functions
@@ -19,6 +20,7 @@ namespace Frontend {
 		int arity; // Holds how many parameters a function needs
 		RyRuntime::Chunk chunk; // The data for the function
 		std::string name; // The name of the function
+		int upvalueCount = 0;
 
 		RyFunction() : arity(0), name("") {} // Default Constructor for main
 

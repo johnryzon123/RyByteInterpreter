@@ -5,6 +5,7 @@
 #include <set>
 #include <stdarg.h>
 #include "chunk.h"
+#include "class.h"
 #include "common.h"
 #include "compiler.h"
 #include "func.h"
@@ -51,9 +52,35 @@ namespace RyRuntime {
 		stackTop--;
 		return *stackTop;
 	}
+	std::shared_ptr<RyUpValue> VM::captureUpvalue(RyValue *local) {
+		std::shared_ptr<RyUpValue> prevUpvalue = nullptr;
+		std::shared_ptr<RyUpValue> upvalue = openUpvalues;
+
+		while (upvalue != nullptr && upvalue->location > local) {
+			prevUpvalue = upvalue;
+			upvalue = upvalue->next;
+		}
+
+		if (upvalue != nullptr && upvalue->location == local) {
+			return upvalue;
+		}
+
+		auto createdUpvalue = std::make_shared<RyUpValue>();
+		createdUpvalue->location = local;
+		createdUpvalue->next = upvalue;
+
+		if (prevUpvalue == nullptr) {
+			openUpvalues = createdUpvalue;
+		} else {
+			prevUpvalue->next = createdUpvalue;
+		}
+
+		return createdUpvalue;
+	}
 
 	VM::VM() {
 		resetStack();
+		openUpvalues = nullptr;
 		registerNatives(globals);
 	}
 
@@ -74,26 +101,26 @@ namespace RyRuntime {
 	}
 
 	InterpretResult VM::interpret(std::shared_ptr<Frontend::RyFunction> function) {
-		resetStack(); // Always start fresh for a new REPL line
-		push(RyValue(function));
+		resetStack();
+
+		std::shared_ptr<RyClosure> closure = std::make_shared<RyClosure>(function);
+		push(RyValue(closure));
 
 		CallFrame *frame = &frames[frameCount++];
-		frame->function = function;
+		frame->closure = closure;
 		frame->ip = function->chunk.code.data();
 		frame->slots = stack;
 
 		return run();
 	}
 	bool VM::isTruthy(RyValue value) {
-		if (value.isNumber()) {
-			return value.asNumber() != 0;
-		} else if (value.isBool()) {
-			return value.asBool();
-		} else if (value.isNil()) {
+		if (value.isNil())
 			return false;
-		} else {
-			return true;
-		}
+		if (value.isNumber())
+			return value.asNumber() != 0;
+		if (value.isBool())
+			return value.asBool();
+		return true;
 	}
 	RyValue VM::peek(int distance) {
 		// stackTop points to the NEXT empty slot,
@@ -101,10 +128,19 @@ namespace RyRuntime {
 		return stackTop[-1 - distance];
 	}
 
+	void VM::closeUpvalues(RyValue *last) {
+		while (openUpvalues != nullptr && openUpvalues->location >= last) {
+			std::shared_ptr<RyUpValue> upvalue = openUpvalues;
+			upvalue->closed = *upvalue->location;
+			upvalue->location = &upvalue->closed;
+			openUpvalues = upvalue->next;
+		}
+	}
+
 	InterpretResult VM::run() {
 #define FRAME (frames[frameCount - 1])
 #define READ_BYTE() (*FRAME.ip++)
-#define READ_CONSTANT() (FRAME.function->chunk.constants[READ_BYTE()])
+#define READ_CONSTANT() (FRAME.closure->function->chunk.constants[READ_BYTE()])
 #define READ_SHORT() (FRAME.ip += 2, (uint16_t) ((FRAME.ip[-2] << 8) | FRAME.ip[-1]))
 #define RY_PANIC(format, ...)                                                                                          \
 	{                                                                                                                    \
@@ -115,12 +151,11 @@ namespace RyRuntime {
 
 		for (;;) {
 			// Debug: Print stack height
-			/* std::cout << "Stack height: " << (long) (stackTop - stack) << " Frames: " << frames << std::endl;
-			std::cout << "--- STACK DEBUG (Height: " << (stackTop - stack) << ") ---" << std::endl;
+			/*std::cout << "--- STACK DEBUG (Height: " << (stackTop - stack) << ") ---" << std::endl;
 			for (RyValue *slot = stack; slot < stackTop; slot++) {
-				std::cout << "[" << (slot - stack) << "]" << " Value: " << slot->to_string()
-									<< std::endl;
+				std::cout << "[" << (slot - stack) << "]" << " Value: " << slot->to_string();
 			}
+			std::cout << "\nStack height: " << (long) (stackTop - stack) << " Frames: " << frames << std::endl;
 			std::cout << "--------------------------" << std::endl;
 			*/
 			if (stackTop < stack) {
@@ -372,9 +407,9 @@ namespace RyRuntime {
 					if (panicStack.empty()) {
 						if (frameCount > 0) {
 							auto &frame = frames[frameCount - 1];
-							size_t instruction = frame.ip - frame.function->chunk.code.data() - 1;
-							int line = frame.function->chunk.lines[instruction];
-							int column = frame.function->chunk.columns[instruction];
+							size_t instruction = frame.ip - frame.closure->function->chunk.code.data() - 1;
+							int line = frame.closure->function->chunk.lines[instruction];
+							int column = frame.closure->function->chunk.columns[instruction];
 
 							RyTools::report(line, column, "", output, vmSource);
 						}
@@ -386,10 +421,12 @@ namespace RyRuntime {
 					ControlBlock block = panicStack.back();
 					panicStack.pop_back();
 
+					frameCount = block.frameDepth;
 					stackTop = stack + block.stackDepth;
+					closeUpvalues(stackTop);
 					push(RyValue(output));
 
-					FRAME.ip = FRAME.function->chunk.code.data() + block.handlerIP;
+					FRAME.ip = FRAME.closure->function->chunk.code.data() + block.handlerIP;
 					break;
 				}
 				case OP_CALL: {
@@ -404,31 +441,67 @@ namespace RyRuntime {
 							// Identify the callee's index
 							int calleeIndex = 1 + argCount;
 
-							// Check if there's a receiver (the list sitting at calleeIndex + 1)
-							bool hasReceiver = (stackTop - calleeIndex - 1 >= stack) && (stackTop - calleeIndex - 1)->isList();
-
 							stackTop -= calleeIndex; // Pop args and function
-
-							if (hasReceiver) {
-								pop(); // Pop the list receiver
-							}
-
 							push(result);
 						} catch (const std::runtime_error &e) {
 							runtimeError("%s", e.what());
 							goto trigger_panic;
 						}
+					} else if (callee.isClosure()) {
+						auto closure = callee.asClosure();
+						if (argCount != closure->function->arity) {
+							runtimeError("Expected %d arguments but got %d.", closure->function->arity, argCount);
+							goto trigger_panic;
+						}
+
+						CallFrame *frame = &frames[frameCount++];
+						frame->closure = closure;
+						frame->ip = closure->function->chunk.code.data();
+						frame->slots = stackTop - argCount - 1;
 					} else if (callee.isFunction()) {
-						// Check arity here!
 						if (argCount != callee.asFunction()->arity) {
 							runtimeError("Expected %d arguments but got %d.", callee.asFunction()->arity, argCount);
 							goto trigger_panic;
 						}
 
 						CallFrame *frame = &frames[frameCount++];
-						frame->function = callee.asFunction();
-						frame->ip = frame->function->chunk.code.data();
+
+						frame->closure = std::make_shared<RyClosure>(callee.asFunction());
+						frame->ip = frame->closure->function->chunk.code.data();
 						frame->slots = stackTop - argCount - 1;
+					} else if (callee.isClass()) {
+						auto klass = callee.asClass();
+						auto instance = std::make_shared<Frontend::RyInstance>(klass);
+						*(stackTop - argCount - 1) = RyValue(instance);
+
+						auto initializer = klass->methods.find("init");
+						if (initializer != klass->methods.end()) {
+							CallFrame *frame = &frames[frameCount++];
+							frame->closure = initializer->second;
+							frame->ip = frame->closure->function->chunk.code.data();
+							frame->slots = stackTop - argCount - 1;
+
+							if (argCount != frame->closure->function->arity) {
+								runtimeError("Expected %d arguments but got %d.", frame->closure->function->arity, argCount);
+								goto trigger_panic;
+							}
+						} else if (argCount != 0) {
+							runtimeError("Expected 0 arguments but got %d.", argCount);
+							goto trigger_panic;
+						}
+					} else if (callee.isBoundMethod()) {
+						auto bound = callee.asBoundMethod();
+						*(stackTop - argCount - 1) = bound->receiver;
+
+						CallFrame *frame = &frames[frameCount++];
+						frame->closure = bound->method;
+						frame->ip = frame->closure->function->chunk.code.data();
+						frame->slots = stackTop - argCount - 1;
+
+						if (argCount != frame->closure->function->arity) {
+							runtimeError("Expected %d arguments but got %d.", frame->closure->function->arity, argCount);
+							goto trigger_panic;
+						}
 					} else {
 						runtimeError("Can only call functions and classes.");
 						goto trigger_panic;
@@ -437,6 +510,10 @@ namespace RyRuntime {
 				}
 				case OP_RETURN: {
 					RyValue result = pop();
+					if (FRAME.closure->function->name == "init") {
+						result = FRAME.slots[0];
+					}
+					closeUpvalues(FRAME.slots);
 
 					// Save the starting point of the frame it's are about to leave
 					RyValue *currentFrameSlots = FRAME.slots;
@@ -534,10 +611,23 @@ namespace RyRuntime {
 					uint16_t jumpOffset = READ_SHORT();
 					ControlBlock block;
 					block.stackDepth = (int) (stackTop - stack);
+					block.frameDepth = frameCount;
 
-					block.handlerIP = (int) ((FRAME.ip + jumpOffset) - FRAME.function->chunk.code.data());
+					block.handlerIP = (int) ((FRAME.ip + jumpOffset) - FRAME.closure->function->chunk.code.data());
 
 					panicStack.push_back(block);
+					break;
+				}
+				case OP_INHERIT: {
+					RyValue superclassValue = peek(1);
+					if (!superclassValue.isClass()) {
+						runtimeError("Superclass must be a class.");
+						goto trigger_panic;
+					}
+
+					auto subclass = peek(0).asClass();
+					subclass->superclass = superclassValue.asClass();
+					pop(); // Pop the superclass, leave the subclass for OP_METHOD
 					break;
 				}
 				case OP_END_ATTEMPT: {
@@ -576,17 +666,72 @@ namespace RyRuntime {
 							runtimeError("Key '%s' not found in map.", index.to_string().c_str());
 							goto trigger_panic;
 						}
+					} else if (object.isString()) {
+						auto str = object.to_string();
+						if (!index.isNumber()) {
+							runtimeError("String index must be a number.");
+							goto trigger_panic;
+						}
+						int i = (int) index.asNumber();
+						if (i >= 0 && i < str.length()) {
+							push(RyValue(std::string(1, str[i])));
+						} else {
+							runtimeError("String index out of bounds.");
+							goto trigger_panic;
+						}
 					} else {
-						runtimeError("Can only index lists and maps.");
+						runtimeError("Can only index lists, maps, and strings.");
 						goto trigger_panic;
 					}
+					break;
+				}
+				case OP_GET_UPVALUE: {
+					uint8_t slot = READ_BYTE();
+					push(*frames[frameCount - 1].closure->upvalues[slot]->location);
+					break;
+				}
+				case OP_SET_UPVALUE: {
+					uint8_t slot = READ_BYTE();
+					*FRAME.closure->upvalues[slot]->location = peek(0);
+					break;
+				}
+				case OP_CLOSURE: {
+					std::shared_ptr<Frontend::RyFunction> function = READ_CONSTANT().asFunction();
+
+					auto closure = std::make_shared<RyClosure>(function);
+					push(RyValue(closure));
+
+					for (int i = 0; i < function->upvalueCount; i++) {
+						uint8_t isLocal = READ_BYTE();
+						uint8_t index = READ_BYTE();
+
+						if (isLocal) {
+							closure->upvalues[i] = captureUpvalue(FRAME.slots + index);
+						} else {
+							closure->upvalues[i] = FRAME.closure->upvalues[index];
+						}
+					}
+					break;
+				}
+				case OP_CLASS: {
+					RyValue name = READ_CONSTANT();
+					auto klass = std::make_shared<Frontend::RyClass>(name.to_string());
+					push(RyValue(klass));
+					break;
+				}
+				case OP_METHOD: {
+					RyValue name = READ_CONSTANT();
+					RyValue method = peek(0);
+					RyValue klass = peek(1);
+					auto closure = method.asClosure();
+					klass.asClass()->methods[name.to_string()] = closure;
+					pop();
 					break;
 				}
 				case OP_GET_PROPERTY: {
 					RyValue nameValue = READ_CONSTANT();
 					std::string propertyName = nameValue.to_string();
 
-					// 1. Peek instead of Pop! Keep the list on the stack for now.
 					RyValue object = peek(0);
 
 					// Handle properties that REPLACE the object (like .len)
@@ -620,6 +765,32 @@ namespace RyRuntime {
 						}
 					}
 
+					if (object.isInstance()) {
+						auto instance = object.asInstance();
+						if (instance->fields.count(propertyName)) {
+							pop(); // Instance
+							push(instance->fields[propertyName]);
+							break;
+						}
+						auto method = instance->klass->methods.find(propertyName);
+						if (method != instance->klass->methods.end()) {
+							pop(); // Instance
+							auto bound = std::make_shared<Frontend::RyBoundMethod>(object, method->second);
+							push(RyValue(bound));
+							break;
+						}
+					}
+
+					if (object.isClass()) {
+						auto klass = object.asClass();
+						auto it = klass->methods.find(propertyName);
+						if (it != klass->methods.end()) {
+							pop();
+							push(it->second);
+							break;
+						}
+					}
+
 					// If we found nothing, pop the object before throwing the error
 					pop();
 					runtimeError("Property '%s' not found on type.", propertyName.c_str());
@@ -639,8 +810,32 @@ namespace RyRuntime {
 						}
 						(*list)[(int) index.asNumber()] = value;
 						// D push(value);
+					} else if (object.isString()) {
+						runtimeError("Strings are immutable and do not support index assignment.");
+						goto trigger_panic;
+					} else if (object.isInstance()) {
+						// This might be used for obj["field"] access if supported
+						// For now, we fall through to error as Ry typically uses dot notation for instances
+						runtimeError("Instances do not support index assignment.");
+						goto trigger_panic;
 					} else {
-						runtimeError("Only lists can be indexed currently.");
+						runtimeError("Only lists support index assignment.");
+						goto trigger_panic;
+					}
+					break;
+				}
+				case OP_SET_PROPERTY: {
+					RyValue nameVal = READ_CONSTANT();
+					RyValue value = pop();
+					RyValue object = peek(0);
+
+					if (object.isInstance()) {
+						auto instance = object.asInstance();
+						instance->fields[nameVal.to_string()] = value;
+						pop(); // Object
+						push(value);
+					} else {
+						runtimeError("Only instances have fields.");
 						goto trigger_panic;
 					}
 					break;
@@ -746,6 +941,19 @@ namespace RyRuntime {
 					}
 					std::string fileName = RyTools::findModulePath(fileNameValue.to_string(), false);
 
+					// Check if the module is already compiled and cached
+					auto cached = moduleCache.find(fileName);
+					if (cached != moduleCache.end()) {
+						// Found in cache, push it and call it.
+						push(RyValue(cached->second));
+
+						CallFrame *frame = &frames[frameCount++];
+						frame->closure = cached->second;
+						frame->ip = frame->closure->function->chunk.code.data();
+						frame->slots = stackTop - 1;
+						break; // Done with this opcode
+					}
+
 					// Read the file
 					std::ifstream file(fileName);
 					if (!file.is_open()) {
@@ -763,7 +971,7 @@ namespace RyRuntime {
 					Backend::Parser parser(tokens, tempAliases, source);
 					auto statements = parser.parse();
 
-					Compiler compiler = Compiler(source);
+					Compiler compiler = Compiler(nullptr, source);
 					Chunk chunk;
 					if (!compiler.compile(statements, &chunk)) {
 						runtimeError("Failed to compile imported script '%s'.", fileName.c_str());
@@ -773,12 +981,15 @@ namespace RyRuntime {
 					// Execute the script immediately
 					auto function = std::make_shared<Frontend::RyFunction>(std::move(chunk), fileName, 0);
 
-					// We push the function and call it like a regular Ry function
-					// This ensures its 'data' and 'fn' definitions hit the 'globals' map
-					push(RyValue(function));
+					auto closure = std::make_shared<RyClosure>(function);
+					// Store the newly compiled module in the cache
+					moduleCache[fileName] = closure;
+
+					push(RyValue(closure));
+
 					CallFrame *frame = &frames[frameCount++];
-					frame->function = function;
-					frame->ip = function->chunk.code.data();
+					frame->closure = closure; // Assign the closure object
+					frame->ip = closure->function->chunk.code.data();
 					frame->slots = stackTop - 1;
 
 					// The VM will now continue running the code inside the imported file
